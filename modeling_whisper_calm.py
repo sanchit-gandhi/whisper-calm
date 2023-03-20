@@ -369,7 +369,7 @@ class WhisperAttention(nn.Module):
         bsz, tgt_len, _ = hidden_states.size()
 
         # get query proj
-        query_states = self._shape(self.q_proj(hidden_states), tgt_len, bsz) * self.scaling
+        query_states = self._shape(self.q_proj(hidden_states), tgt_len, bsz)
         # get key, value proj
         # `past_key_value[0].shape[2] == key_value_states.shape[1]`
         # is checking that the `sequence_length` of the `past_key_value` is the same as
@@ -416,9 +416,8 @@ class WhisperAttention(nn.Module):
                     f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.size()}"
                 )
 
-        # the output of sdpa = (batch, num_heads, tgt_len, head_dim)
         attn_output = nn.functional.scaled_dot_product_attention(
-            query_states, key_states, value_states, attn_mask=attention_mask, dropout_p=0.0,
+            query=query_states, key=key_states, value=value_states, attn_mask=attention_mask, dropout_p=self.dropout,
         )
 
         attn_output = attn_output.transpose(1, 2)
