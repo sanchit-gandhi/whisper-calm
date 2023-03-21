@@ -27,7 +27,7 @@ The main paper followed for addressing these questions was Confident Adaptive La
 
 ### What confidence measure to use?
 CALM proposes three confidence measures:
-1. Softmax diff: map the decoder hidden-state to the logit space ($W\_{emb} \boldsymbol{d}_t^i$), run a softmax to get probabilities $\softmax (W\_{emb} \boldsymbol{d}_t^i)$ and take the difference between the top-2 most probable predictions. If large, the model is confident of its predictions and we can terminate. Requires us to run additional projections and top-k indexing (this was optimised for JAX on TPU in the original codebase)
+1. Softmax diff: map the decoder hidden-state to the logit space ($W\_{emb} \boldsymbol{d}_t^i$), run a softmax to get probabilities $ \text{softmax} (W\_{emb} \boldsymbol{d}_t^i)$ and take the difference between the top-2 most probable predictions. If large, the model is confident of its predictions and we can terminate. Requires us to run additional projections and top-k indexing (this was optimised for JAX on TPU in the original codebase)
 2. Cosine sim: compute the cosine similarity between the representation for layer $i$ and layer $i-1$: $\cos (\boldsymbol{d}_t^i, \boldsymbol{d}_t^{i-1})$. If large, the decoder hidden-states have saturated and we can terminate early
 3. Learned classifier: train a linear classifier to assign a confidence score: $c_t^i = \mathcal{M}(\boldsymbol{d}_t^i)$
 
