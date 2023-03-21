@@ -12,7 +12,7 @@ The code is split into two parts:
 
 Early exit is a paradigm for dynamically controlling the number of decoder layers used at inference time. It is based on the reasoning that the same amount of computation may not be required for every input to achieve adequate performance (i.e. depending on whether the input is easy or hard).
 
-Instead of making a prediction based on the hidden-representation of the **final** decoder layer $\mathbf{d}_{t}^{L}$, early exiting makes a prediction based on the hidden-representation for an **intermediate** layer $\mathbf{d}_{t}^{i}$ for $i < L$. For each decoder layer $i$, we compute a confidence score $c_t^i$ for the $t$-th token. We also define an early-exit threshold $\lambda_t^i$. If our confidence score exceeds this threshold ($c_t^i > \lambda_t^i), we exit early and greedily predict the most probably token:
+Instead of making a prediction based on the hidden-representation of the **final** decoder layer $\mathbf{d}_{t}^{L}$, early exiting makes a prediction based on the hidden-representation for an **intermediate** layer $\mathbf{d}_{t}^{i}$ for $i < L$. For each decoder layer $i$, we compute a confidence score $c_t^i$ for the $t$-th token. We also define an early-exit threshold $\lambda_t^i$. If our confidence score exceeds this threshold ($c_t^i > \lambda_t^i$), we exit early and greedily predict the most probably token:
 $$ \hat{y}_{t} = \argmax_{y_t} P(y_t | \mathbf{d}_t^i)$$
 
 Otherwise, we continue to the next layer and repeat.
@@ -26,9 +26,9 @@ The main paper followed for addressing these questions was Confident Adaptive La
 
 ### What confidence measure to use?
 CALM proposes three confidence measures:
-1. Softmax diff: map the decoder hidden-state to the logit space ($W_{emb} \mathbf{d}_t^i), run a softmax to get probs ($\softmax (W_{emb} \mathbf{d}_t^i)$)and take the difference between the top-2 most probable predictions. If large, the model is confident of its predictions and we can terminate. Requires us to run additional projections and top-k indexing (this was optimised for JAX on TPU in the original codebase)
-2. Cosine sim: compute the cosine similarity between the representation for layer i and layer i-1: $\cos (\mathbf{d}_t^i, \mathbf{d}_t^{i-1})$. If large, the decoder hidden-states have saturated and we can terminate early
-3. Learned classifier: train a linear classifier to assign a confidence score: $c_t^i = \mathcal{M}(\mathbf{d}_t^i)
+1. Softmax diff: map the decoder hidden-state to the logit space ($W_{emb} \mathbf{d}_t^i$), run a softmax to get probs ($\softmax (W_{emb} \mathbf{d}_t^i)$)and take the difference between the top-2 most probable predictions. If large, the model is confident of its predictions and we can terminate. Requires us to run additional projections and top-k indexing (this was optimised for JAX on TPU in the original codebase)
+2. Cosine sim: compute the cosine similarity between the representation for layer $i$ and layer $i-1$: $\cos (\mathbf{d}_t^i, \mathbf{d}_t^{i-1})$. If large, the decoder hidden-states have saturated and we can terminate early
+3. Learned classifier: train a linear classifier to assign a confidence score: $c_t^i = \mathcal{M}(\mathbf{d}_t^i)$
 
 -> I focussed on 1 & 2, since they’re parameter free and attain similar performance to the learned classifier approach. To bypass the top-k indexing in 1, I also used an entropy based measure.
 
@@ -38,7 +38,6 @@ CALM presents an algorithm for selecting an exit threshold that guarantees that 
 ### How to handle missing hidden-representations?
 CALM copies the decoder hidden-state for the exited decoder layer to all subsequent ones. This means that we still have to run the entire decoder forward even if we’ve skipped layers, but we can run the layers in parallel as soon as we know we have exited (since the input is the same for each one).
 I wanted to gauge how many decoder layers we can skip with early exit, what the affect is on the WER performance, and thus how viable it is for Whisper. Therefore, I chose not to parallelise this computation in this first step, as this is only worthwhile if we can guarantee that the model retains its performance.
-
 
 ## Results
 
