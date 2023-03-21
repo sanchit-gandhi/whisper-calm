@@ -14,7 +14,7 @@ Early exit is a paradigm for dynamically controlling the number of decoder layer
 
 Instead of making a prediction based on the hidden-representation of the **final** decoder layer $\boldsymbol{d}\_{t}^{L}$, early exiting makes a prediction based on the hidden-representation for an **intermediate** layer $\boldsymbol{d}\_{t}^{i}$ for $i < L$. For each decoder layer $i$, we compute a confidence score $c_t^i$ for the $t$-th token. We also define an early-exit threshold $\lambda_t^i$. If our confidence score exceeds this threshold ($c_t^i > \lambda_t^i$), we exit early and greedily predict the most probable token:
 
-$$ \hat{y}\_{t} = \argmax\_{y_t} P(y_t | \boldsymbol{d}_t^i)$$
+$$ \hat{y}\_{t} = \text{argmax} \_{y_t} P(y_t | \boldsymbol{d}_t^i)$$
 
 Otherwise, we continue to the next layer and repeat.
 
@@ -27,8 +27,8 @@ The main paper followed for addressing these questions was Confident Adaptive La
 
 ### What confidence measure to use?
 CALM proposes three confidence measures:
-1. Softmax diff: map the decoder hidden-state to the logit space ($W\_{emb} \boldsymbol{d}_t^i$), run a softmax to get probabilities $ \text{softmax} (W\_{emb} \boldsymbol{d}_t^i)$ and take the difference between the top-2 most probable predictions. If large, the model is confident of its predictions and we can terminate. Requires us to run additional projections and top-k indexing (this was optimised for JAX on TPU in the original codebase)
-2. Cosine sim: compute the cosine similarity between the representation for layer $i$ and layer $i-1$: $\cos (\boldsymbol{d}_t^i, \boldsymbol{d}_t^{i-1})$. If large, the decoder hidden-states have saturated and we can terminate early
+1. Softmax diff: map the decoder hidden-state to the logit space ($W\_{emb} \boldsymbol{d}_t^i$), run a softmax to get probabilities $ \text{softmax} (\boldsymbol{W}\_{emb} \boldsymbol{d}_t^i)$ and take the difference between the top-2 most probable predictions. If large, the model is confident of its predictions and we can terminate. Requires us to run additional projections and top-k indexing (this was optimised for JAX on TPU in the original codebase)
+2. Cosine sim: compute the cosine similarity between the representation for layer $i$ and layer $(i-1)$: $\cos (\boldsymbol{d}_t^i, \boldsymbol{d}_t^{i-1})$. If large, the decoder hidden-states have saturated and we can terminate early
 3. Learned classifier: train a linear classifier to assign a confidence score: $c_t^i = \mathcal{M}(\boldsymbol{d}_t^i)$
 
 -> I focussed on 1 & 2, since they’re parameter free and attain similar performance to the learned classifier approach. To bypass the top-k indexing in 1, I also used an entropy based measure.
