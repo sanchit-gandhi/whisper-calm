@@ -1098,6 +1098,7 @@ class WhisperDecoder(WhisperPreTrainedModel):
 
         run_decoder_forward = True
         exit_layer = len(self.layers)
+        max_entropy = math.log(self.config.vocab_size)
 
         for idx, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
@@ -1131,11 +1132,11 @@ class WhisperDecoder(WhisperPreTrainedModel):
                     if self.threshold != 1:
                         # 3. Take softmax
                         probs = nn.functional.softmax(lm_logits, dim=-1)
-                        # 4. Take top 2 probs and compute diff TODO(SG): is there a measure over the entire distribution that's better suited?
-                        top_2 = torch.topk(probs, 2).values
-                        diff = top_2[..., 0] - top_2[..., 1]
+                        # 4. Take entropy
+                        entropy = - torch.sum(probs * torch.log(probs + 1e-7)) / max_entropy
+                        rev_entropy = 1 - entropy
                         # 5. Early stopping criterion
-                        if diff > self.threshold:
+                        if rev_entropy > self.threshold:
                             exit_layer = idx + 1  # start indexing from 1 for natural number convention
                             run_decoder_forward = False
 
