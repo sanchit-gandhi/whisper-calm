@@ -12,7 +12,7 @@ The code is split into two parts:
 
 Early exit is a paradigm for dynamically controlling the number of decoder layers used at inference time. It is based on the reasoning that the same amount of computation may not be required for every input to achieve adequate performance (i.e. depending on whether the input is easy or hard).
 
-Instead of making a prediction based on the hidden-representation of the **final** decoder layer $\mathbf{d}_{t}^{L}$, early exiting makes a prediction based on the hidden-representation for an **intermediate** layer $\mathbf{d}_{t}^{i}$ for $i < L$. For each decoder layer $i$, we compute a confidence score $c_t^i$ for the $t$-th token. We also define an early-exit threshold $\lambda_t^i$. If our confidence score exceeds this threshold ($c_t^i > \lambda_t^i$), we exit early and greedily predict the most probably token:
+Instead of making a prediction based on the hidden-representation of the **final** decoder layer $\mathbf{d}\_{t}^{L}$, early exiting makes a prediction based on the hidden-representation for an **intermediate** layer $\mathbf{d}_{t}^{i}$ for $i < L$. For each decoder layer $i$, we compute a confidence score $c_t^i$ for the $t$-th token. We also define an early-exit threshold $\lambda_t^i$. If our confidence score exceeds this threshold ($c_t^i > \lambda_t^i$), we exit early and greedily predict the most probably token:
 $$ \hat{y}_{t} = \argmax_{y_t} P(y_t | \mathbf{d}_t^i)$$
 
 Otherwise, we continue to the next layer and repeat.
