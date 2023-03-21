@@ -1104,20 +1104,22 @@ class WhisperDecoder(WhisperPreTrainedModel):
                 all_hidden_states += (hidden_states,)
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
-            if run_decoder_forward:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=encoder_hidden_states,
-                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-                    cross_attn_layer_head_mask=(
-                        cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
-                    ),
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                )
+            layer_outputs = decoder_layer(
+                hidden_states,
+                attention_mask=attention_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                layer_head_mask=(head_mask[idx] if head_mask is not None else None),
+                cross_attn_layer_head_mask=(
+                    cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
+                ),
+                past_key_value=past_key_value,
+                output_attentions=output_attentions,
+                use_cache=use_cache,
+            )
 
+            if run_decoder_forward:
+                # We only propagate the decoder hidden-state forward to the next layer if we've not exited early
+                # Otherwise we re-use the decoder hidden-state for the remaining decoder layers since we still need to get the k-v cache
                 hidden_states = layer_outputs[0]
 
                 if self.threshold != 1 or (idx + 1) == exit_layer:
@@ -1136,22 +1138,6 @@ class WhisperDecoder(WhisperPreTrainedModel):
                         if diff > self.threshold:
                             exit_layer = idx + 1  # start indexing from 1 for natural number convention
                             run_decoder_forward = False
-
-            else:
-                # We've exited early, so just propagate the decoder hidden-state forward to the remaining decoder layers
-                # since we need to get the k-v cache for these layers
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=attention_mask,
-                    encoder_hidden_states=encoder_hidden_states,
-                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-                    cross_attn_layer_head_mask=(
-                        cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
-                    ),
-                    past_key_value=past_key_value,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                )
 
             if use_cache:
                 next_decoder_cache += (layer_outputs[3 if output_attentions else 1],)
