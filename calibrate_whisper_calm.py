@@ -30,7 +30,7 @@ def parse_args():
     parser.add_argument(
         "--checkpoint",
         type=str,
-        default="base.en",
+        default="medium.en",
         help="The checkpoint to calibrate. One of `['tiny.en', 'base.en', 'small.en', 'medium.en', 'large-v2']`.",
     )
     parser.add_argument(
@@ -97,7 +97,7 @@ def main():
 
     # load the model once at the start - we can change the threshold values on the fly
     model = WhisperForConditionalGeneration.from_pretrained(f"openai/whisper-{args.checkpoint}")
-    model.to("cuda").half()
+    model.to("cuda").half().eval()
 
     labels = []
     pred_ids = []
@@ -123,8 +123,8 @@ def main():
     all_wers = [wer_static]
     all_pjs = [1.0]
 
-    # specify a grid of exit thresholds in [0, 1]
-    lambdas = np.arange(0, 1.05, 0.05)[::-1]
+    # specify a grid of exit thresholds in [0, 1] -> in practice anything < 0.95 gives practically random outputs so clip here
+    lambdas = np.arange(0.925, 1.01, 0.0125)[::-1]
 
     for lmbda in lambdas[1:]:
         model.model.decoder.threshold = lmbda
@@ -155,6 +155,9 @@ def main():
         # compute p-value through Hoeffding’s inequality
         p_j = np.exp(-2 * num_samples * max(0, args.delta - mean_distance) ** 2)
 
+        # exit condition - skip for whisper since it breaks
+        # if p_j > args.epsilon
+
         # compute the WER of our calibrated early-exit model TODO(SG): WER over test set
         wer_calibrated = wer.compute(predictions=pred_str, references=label_str)
 
@@ -172,7 +175,7 @@ def main():
         writer.writerow(headers)
         # write the data
         for i in range(len(all_runtimes)):
-            writer.writerow([lambdas[i], all_runtimes[i], all_decoder_layers[i], all_distances[i], all_wers[i], all_pjs[i]])
+            writer.writerow([round(lambdas[i], 3), round(all_runtimes[i], 1), round(all_decoder_layers[i], 1), round(all_distances[i], 2), 100 * round(all_wers[i], 4), round(all_pjs[i], 4)])
 
 if __name__ == "__main__":
     main()
