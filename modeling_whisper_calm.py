@@ -318,7 +318,8 @@ class WhisperPositionalEmbedding(nn.Embedding):
 
 
 class WhisperAttention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
+    """Multi-headed attention from 'Attention Is All You Need' paper. Uses Flash Attention from the PyTorch 2.0
+    scaled dot product attention (SDPA) function."""
 
     def __init__(
         self,
@@ -339,7 +340,6 @@ class WhisperAttention(nn.Module):
                 f"embed_dim must be divisible by num_heads (got `embed_dim`: {self.embed_dim}"
                 f" and `num_heads`: {num_heads})."
             )
-        self.scaling = self.head_dim**-0.5
         self.is_decoder = is_decoder
 
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=False)
@@ -368,7 +368,7 @@ class WhisperAttention(nn.Module):
 
         bsz, tgt_len, _ = hidden_states.size()
 
-        # get query proj
+        # get query proj - don't scale this by head_dim**-0.5 since this is done internally by SDPA
         query_states = self._shape(self.q_proj(hidden_states), tgt_len, bsz)
         # get key, value proj
         # `past_key_value[0].shape[2] == key_value_states.shape[1]`
@@ -1095,26 +1095,63 @@ class WhisperDecoder(WhisperPreTrainedModel):
                     f"The `{mask_name}` should be specified for {len(self.layers)} layers, but it is for"
                     f" {head_mask.size()[0]}."
                 )
+
+        run_decoder_forward = True
+        exit_layer = len(self.layers)
+
         for idx, decoder_layer in enumerate(self.layers):
-            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
-            layer_outputs = decoder_layer(
-                hidden_states,
-                attention_mask=attention_mask,
-                encoder_hidden_states=encoder_hidden_states,
-                layer_head_mask=(head_mask[idx] if head_mask is not None else None),
-                cross_attn_layer_head_mask=(
-                    cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
-                ),
-                past_key_value=past_key_value,
-                output_attentions=output_attentions,
-                use_cache=use_cache,
-            )
+            if run_decoder_forward:
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
+                    cross_attn_layer_head_mask=(
+                        cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
+                    ),
+                    past_key_value=past_key_value,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                )
 
-            hidden_states = layer_outputs[0]
+                hidden_states = layer_outputs[0]
+
+                if self.threshold != 1 or (idx + 1) == exit_layer:
+                    # CALM decoding
+                    # 1. Apply the "final layer norm" layer after each decoder layer
+                    ln_hidden_states = self.layer_norm(hidden_states)
+                    # 2. Compute logits
+                    lm_logits = self.proj_out(ln_hidden_states)
+                    if self.threshold != 1:
+                        # 3. Take softmax
+                        probs = nn.functional.softmax(lm_logits, dim=-1)
+                        # 4. Take top 2 probs and compute diff TODO(SG): is there a measure over the entire distribution that's better suited?
+                        top_2 = torch.topk(probs, 2).values
+                        diff = top_2[..., 0] - top_2[..., 1]
+                        # 5. Early stopping criterion
+                        if diff > self.threshold:
+                            exit_layer = idx + 1  # start indexing from 1 for natural number convention
+                            run_decoder_forward = False
+
+            else:
+                # We've exited early, so just propagate the decoder hidden-state forward to the remaining decoder layers
+                # since we need to get the k-v cache for these layers
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=attention_mask,
+                    encoder_hidden_states=encoder_hidden_states,
+                    layer_head_mask=(head_mask[idx] if head_mask is not None else None),
+                    cross_attn_layer_head_mask=(
+                        cross_attn_head_mask[idx] if cross_attn_head_mask is not None else None
+                    ),
+                    past_key_value=past_key_value,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                )
 
             if use_cache:
                 next_decoder_cache += (layer_outputs[3 if output_attentions else 1],)
@@ -1124,20 +1161,6 @@ class WhisperDecoder(WhisperPreTrainedModel):
 
                 if encoder_hidden_states is not None:
                     all_cross_attentions += (layer_outputs[2],)
-
-            # CALM decoding
-            # 1. Apply the "final layer norm" layer after each decoder layer
-            ln_hidden_states = self.layer_norm(hidden_states)
-            # 2. Compute logits
-            lm_logits = self.proj_out(ln_hidden_states)
-            # 3. Take softmax
-            probs = nn.functional.softmax(lm_logits, dim=-1)
-            # 4. Take top 2 probs and compute diff TODO(SG): is there a measure over the entire distribution that's better suited?
-            top_2 = torch.topk(probs, 2).values
-            diff = top_2[..., 0] - top_2[..., 1]
-            # 5. Early stopping criterion
-            if diff > self.threshold:
-                break
 
         # add hidden states from the last decoder layer
         if output_hidden_states:
@@ -1156,7 +1179,7 @@ class WhisperDecoder(WhisperPreTrainedModel):
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
             cross_attentions=all_cross_attentions,
-            decoder_layers=idx + 1,
+            decoder_layers=exit_layer,
         )
 
 
